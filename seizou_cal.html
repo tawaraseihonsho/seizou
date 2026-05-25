@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>段取り管理</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { background: #09090b; color: #e4e4e7; font-family: 'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif; }
+    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.5; }
+    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: #18181b; } ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 2px; }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const MACHINES = ["断裁","中綴じ","折り機１F","3方仕上げ","折り機２F","丁合機","無線綴じ","ミニ折"];
+const WORKERS  = ["桶谷","上野","沖原","藤原","おとん","良輔","おかん"];
+const STATUS_LIST = ["未着手","作業中","完了"];
+const QUOTE_STATUS_LIST = ["未見積","見積済","承認済"];
+const QUOTE_STATUS_STYLE = {
+  "未見積": { bg:"#1e293b", border:"#334155", text:"#94a3b8", dot:"#475569" },
+  "見積済": { bg:"#1c1033", border:"#7c3aed", text:"#c4b5fd", dot:"#a78bfa" },
+  "承認済": { bg:"#052e16", border:"#166534", text:"#4ade80", dot:"#22c55e" },
+};
+function fmtMoney(n) { return n ? `¥${Number(n).toLocaleString()}` : "−"; }
+const STATUS_STYLE = {
+  "未着手": { bg:"#1e293b", border:"#334155", text:"#94a3b8", dot:"#475569" },
+  "作業中": { bg:"#422006", border:"#92400e", text:"#fbbf24", dot:"#f59e0b" },
+  "完了":   { bg:"#052e16", border:"#166534", text:"#4ade80", dot:"#22c55e" },
+};
+
+// 取引先カラーパレット
+const CLIENT_COLORS = [
+  { bg:"#1e1b4b", border:"#4338ca", text:"#a5b4fc", dot:"#818cf8" },
+  { bg:"#1a1033", border:"#7c3aed", text:"#c4b5fd", dot:"#a78bfa" },
+  { bg:"#0f2027", border:"#0891b2", text:"#67e8f9", dot:"#22d3ee" },
+  { bg:"#0a1f1a", border:"#059669", text:"#6ee7b7", dot:"#34d399" },
+  { bg:"#1c0f0a", border:"#d97706", text:"#fcd34d", dot:"#fbbf24" },
+  { bg:"#1f0a0a", border:"#dc2626", text:"#fca5a5", dot:"#f87171" },
+  { bg:"#0f1a2a", border:"#2563eb", text:"#93c5fd", dot:"#60a5fa" },
+  { bg:"#1a0f2a", border:"#9333ea", text:"#d8b4fe", dot:"#c084fc" },
+];
+
+const today = new Date().toISOString().slice(0,10);
+const STORAGE_KEY = "seizou_jobs_v2";
+const INITIAL_DATA = [{"id": "1779461908359", "client": "服部", "product": "KOBECCO６月", "qty": "8200", "processType": "無線綴じ　120p", "pickupDate": "2026-05-22", "deliveryDate": "2026-06-01", "machines": [], "workers": [], "status": "未着手", "note": ""}, {"id": "1779461853282", "client": "ミナトメイワ印刷", "product": "REFA　取説", "qty": "約50000", "processType": "3つ折り", "pickupDate": "2026-05-21", "deliveryDate": "2026-05-27", "machines": [], "workers": [], "status": "未着手", "note": ""}, {"id": "1779461811265", "client": "ミナトメイワ印刷", "product": "看護連盟総会資料", "qty": "330", "processType": "無線綴じ", "pickupDate": "2026-05-21", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": ""}, {"id": "1779287242165", "client": "共栄印刷", "product": "希望", "qty": "4035", "processType": "無線綴じ　96p", "pickupDate": "2026-05-20", "deliveryDate": "2026-05-27", "machines": [], "workers": [], "status": "未着手", "note": ""}, {"id": "1779233304945", "client": "サンエー", "product": "マンスリー", "qty": "3500", "processType": "新聞18pペラ", "pickupDate": "2026-05-25", "deliveryDate": "2026-05-27", "machines": [], "workers": [], "status": "未着手", "note": ""}, {"id": "1779233203960.65", "client": "服部", "product": "甲陽学園案内", "qty": "6000", "processType": "観音折り", "pickupDate": "2026-05-27", "deliveryDate": "2026-06-03", "machines": [], "workers": [], "status": "未着手", "note": "5/27にデイリー印刷様より持込支給予定。校正確認しましたら、またご連絡いたします。"}, {"id": "1779167791156", "client": "福田", "product": "教職員名簿", "qty": "850", "processType": "無線綴じ　96p", "pickupDate": "2026-05-21", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": ""}, {"id": "1779167714973", "client": "福田", "product": "令和9年度 考査課題吟集", "qty": "750", "processType": "206p無線綴じ", "pickupDate": "2026-05-21", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": ""}, {"id": "1779089475388.45", "client": "服部", "product": "令和9年度募集要項", "qty": "2000部", "processType": "", "pickupDate": "2026-05-21", "deliveryDate": "2026-05-29", "machines": [], "workers": [], "status": "未着手", "note": "封筒印刷折加工354695 無線綴じ挟込 営業より連絡済みかと思いますが5/21AM 引取りお願いします。"}, {"id": "1778890137534.73", "client": "竹中大工道具館", "product": "イベントカレンダー（7月～12月）", "qty": "3,000枚", "processType": "観音折り", "pickupDate": "2026-05-26", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": "縦210×横588 データ支給 製本納品"}, {"id": "1778890112794", "client": "服部プロセス株式会社", "product": "月刊漫泉 6月号 (072381)", "qty": "680部+予備15", "processType": "無線綴じ", "pickupDate": "2026-05-20", "deliveryDate": "2026-05-22", "machines": [], "workers": [], "status": "未着手", "note": "5/20AM引取りお願いします。製本所様"}, {"id": "1778684867863", "client": "ミナトメイワ印刷", "product": "メグミックス", "qty": "21000", "processType": "ミニ折", "pickupDate": "2026-05-13", "deliveryDate": "2026-05-20", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684849055", "client": "ウニスガ印刷", "product": "竹中大工", "qty": "20000", "processType": "巻き巻き", "pickupDate": "2026-05-11", "deliveryDate": "2026-05-21", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684822983", "client": "服部プロセス", "product": "私の避難計画", "qty": "800", "processType": "ホッチキス止め", "pickupDate": "2026-05-12", "deliveryDate": "2026-05-14", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684788181", "client": "服部プロセス", "product": "兵庫の交通", "qty": "９０００", "processType": "32p＋表紙　横中綴じ", "pickupDate": "2026-05-12", "deliveryDate": "2026-05-19", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684748587", "client": "服部プロセス", "product": "門真アートフェスティバル", "qty": "500", "processType": "60p　無線綴じ", "pickupDate": "2026-05-13", "deliveryDate": "2026-05-18", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684702823", "client": "服部プロセス", "product": "総合カタログ", "qty": "10000", "processType": "36p無線綴じ", "pickupDate": "2026-05-12", "deliveryDate": "2026-05-20", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684669777", "client": "服部プロセス", "product": "YLimitedプラン", "qty": "10000", "processType": "34p無線綴じ", "pickupDate": "2026-05-13", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684633423", "client": "ウニスガ印刷", "product": "業務スーパーpop　黄色", "qty": "5000", "processType": "断裁", "pickupDate": "2026-05-14", "deliveryDate": "2026-05-26", "machines": [], "workers": [], "status": "作業中", "note": ""}, {"id": "1778684607976", "client": "ウニスガ印刷", "product": "業務スーパーpop", "qty": "5000", "processType": "断裁", "pickupDate": "2026-05-14", "deliveryDate": "2026-05-26", "machines": [], "workers": [], "status": "作業中", "note": ""}, {"id": "1778684576754", "client": "服部プロセス", "product": "ドミソ童謡", "qty": "2000", "processType": "PUR製本", "pickupDate": "2026-05-18", "deliveryDate": "2026-05-27", "machines": [], "workers": [], "status": "作業中", "note": ""}, {"id": "1778684544182", "client": "服部プロセス", "product": "法政論台61巻", "qty": "470", "processType": "無線綴じ　292p", "pickupDate": "2026-05-15", "deliveryDate": "2026-05-22", "machines": [], "workers": [], "status": "完了", "note": "抜き刷りあり"}, {"id": "1778684481722", "client": "服部プロセス", "product": "BPO", "qty": "2600", "processType": "8p無線綴じ", "pickupDate": "2026-05-19", "deliveryDate": "2026-05-21", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684448252", "client": "服部プロセス", "product": "たつの市議会便覧", "qty": "250", "processType": "ﾐｼﾝ＋蛇腹折", "pickupDate": "2026-05-25", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": "和佳製本へ外注"}, {"id": "1778684392320", "client": "服部プロセス", "product": "神戸学院大学同窓会記念誌", "qty": "1000", "processType": "112p　無線綴じ", "pickupDate": "2026-05-20", "deliveryDate": "2026-05-31", "machines": [], "workers": [], "status": "未着手", "note": "折り込みあり"}, {"id": "1778684351659", "client": "ウニスガ印刷", "product": "山の手小学校思い出ノート", "qty": "870", "processType": "中綴じ　60p", "pickupDate": "2026-05-11", "deliveryDate": "2026-05-15", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684320277", "client": "ウニスガ印刷", "product": "みっきぃいきいき体操", "qty": "1000", "processType": "観音折", "pickupDate": "2026-05-11", "deliveryDate": "2026-05-14", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684172786", "client": "福田印刷", "product": "2025年度学園報告", "qty": "500", "processType": "A5　78p　無線綴じ", "pickupDate": "2026-05-15", "deliveryDate": "2026-05-21", "machines": [], "workers": [], "status": "完了", "note": ""}, {"id": "1778684113582", "client": "福田印刷", "product": "ﾎﾞﾙﾃｯｸｽｸｰﾗｰ・ﾄﾗﾝｽﾍﾟｸﾀｰ製品ｶﾀﾛｸﾞ", "qty": "6000", "processType": "32p中綴じ", "pickupDate": "2026-05-14", "deliveryDate": "2026-05-18", "machines": [], "workers": [], "status": "完了", "note": "二つ穴あり"}, {"id": "1778684069163", "client": "福田印刷", "product": "PMｼﾝﾎﾟｼﾞｭｳﾑ 2026年度版　ﾊﾟﾝﾌﾚｯﾄ", "qty": "6000", "processType": "20p　中綴じ", "pickupDate": "2026-05-13", "deliveryDate": "2026-05-18", "machines": [], "workers": [], "status": "完了", "note": "50冊包装"}, {"id": "1779459816025", "client": "福田印刷", "product": "従業員組合広報『ひろば』第284号", "qty": "330部", "processType": "無線綴じ（本文20頁）", "pickupDate": "2026-05-19", "deliveryDate": "2026-05-22", "machines": [], "workers": [], "status": "未着手", "note": "A4"}, {"id": "1779459816026", "client": "福田印刷", "product": "SK75SR-7Eカタログ", "qty": "3000部", "processType": "中綴じ（共紙24頁）", "pickupDate": "2026-05-19", "deliveryDate": "2026-05-25", "machines": [], "workers": [], "status": "未着手", "note": "A4 20部/袋入れ"}, {"id": "1779459816027", "client": "福田印刷", "product": "六甲学院 第86期生 中学卒業論文", "qty": "450部", "processType": "無線綴じ（本文160頁）", "pickupDate": "2026-05-20", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": "A4 表紙はオンデマンド印刷"}, {"id": "1779459816028", "client": "福田印刷", "product": "令和9年度 考査課題吟集", "qty": "750冊", "processType": "無線綴じ（本文206頁+扉1枚）", "pickupDate": "2026-05-21", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": "A5"}, {"id": "1779459816029", "client": "福田印刷", "product": "教職員名簿", "qty": "850冊", "processType": "無線綴じ（本文96頁）", "pickupDate": "2026-05-21", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": "A4 表紙は5/22渡し"}, {"id": "1779459816030", "client": "福田印刷", "product": "R&D技報 Vol.75 No.1", "qty": "945部", "processType": "無線綴じ（本文80頁）", "pickupDate": "2026-05-22", "deliveryDate": "2026-05-29", "machines": [], "workers": [], "status": "未着手", "note": "A4"}, {"id": "1779459816031", "client": "福田印刷", "product": "9月セミナーパンフレット概要版", "qty": "7485部", "processType": "中綴じ（共紙8頁）", "pickupDate": "2026-05-25", "deliveryDate": "2026-05-27", "machines": [], "workers": [], "status": "未着手", "note": "A4"}, {"id": "1779459816032", "client": "福田印刷", "product": "神商エコー", "qty": "1800部", "processType": "無線綴じ（本文44頁）", "pickupDate": "2026-05-25", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": "A4 PP袋にラベル貼り・封入作業あり"}, {"id": "1779459816033", "client": "福田印刷", "product": "令和7年度家畜市場成績", "qty": "150部", "processType": "無線綴じ（本文24頁+Z折3枚）", "pickupDate": "2026-05-25", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": "A4 オンデマンド印刷"}, {"id": "1779459816034", "client": "福田印刷", "product": "長府製造所カタログ", "qty": "500部", "processType": "中綴じ（共紙16頁）", "pickupDate": "2026-05-26", "deliveryDate": "2026-05-28", "machines": [], "workers": [], "status": "未着手", "note": "A4"}, {"id": "1779459816035", "client": "福田印刷", "product": "Welcomebook パンフレット", "qty": "1000部", "processType": "中綴じ（共紙12頁）", "pickupDate": "2026-05-26", "deliveryDate": "2026-06-03", "machines": [], "workers": [], "status": "未着手", "note": "A5"}, {"id": "1779459816036", "client": "福田印刷", "product": "第70回JA共済小・中学校書道コンクール募集要項", "qty": "1670部", "processType": "無線綴じ（本文8頁＋ラベル4枚+CCP3枚+Z折1枚）", "pickupDate": "2026-05-26", "deliveryDate": "2026-05-29", "machines": [], "workers": [], "status": "未着手", "note": "A4"}, {"id": "1779459816037", "client": "福田印刷", "product": "播磨工場パンフレット", "qty": "200部", "processType": "中綴じ（共紙16頁）", "pickupDate": "2026-05-28", "deliveryDate": "2026-06-01", "machines": [], "workers": [], "status": "未着手", "note": "A4 挟み込み1枚"}, {"id": "1779459816038", "client": "福田印刷", "product": "SK200/SK210LC-14カタログ", "qty": "5000部", "processType": "中綴じ（共紙24頁）", "pickupDate": "2026-05-28", "deliveryDate": "2026-06-01", "machines": [], "workers": [], "status": "未着手", "note": "A4 6/1に2000部ぐらい発送あり"}, {"id": "1779459816039", "client": "福田印刷", "product": "2025年度災害の発生状況とその原因と対策", "qty": "678冊", "processType": "無線綴じ（本文112頁+扉4枚）", "pickupDate": "2026-05-29", "deliveryDate": "2026-06-04", "machines": [], "workers": [], "status": "未着手", "note": "A4"}];
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxPcxlSUOoSlDQNXVCcw9xQOrwCjSJXJ4zBffict3Ysf8DPZF0YWkZ1o2t6FyOOJvMy-g/exec";
+const CLIENT_COLOR_KEY = "seizou_client_colors_v1";
+
+function getMonthDays(year, month) {
+  const days = [];
+  const last = new Date(year, month+1, 0).getDate();
+  for (let day = 1; day <= last; day++) {
+    const m = String(month+1).padStart(2,"0");
+    const d = String(day).padStart(2,"0");
+    days.push(`${year}-${m}-${d}`);
+  }
+  return days;
+}
+function fmtDate(s) { if(!s) return "−"; const d=new Date(s); return `${d.getMonth()+1}/${d.getDate()}`; }
+function toggle(arr,v) { return arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; }
+
+const sampleJobs = [
+  { id:1, client:"服部プロセス", product:"KOBECCO5月号", qty:"8,600部", processType:"無線綴じ", pickupDate:"2025-05-01", deliveryDate:"2025-05-08", machines:["断裁","無線綴じ"], workers:["桶谷","上野"], status:"作業中", note:"無線綴じ・PPグロス加工" },
+];
+const emptyForm = { client:"", product:"", qty:"", processType:"", pickupDate:today, deliveryDate:"", machines:[], workers:[], note:"", status:"未着手", quoteStatus:"未見積", quoteAmount:0, quoteSpec:"", quoteNote:"" };
+const TABS = [
+  { icon:"📅", label:"カレンダー" },
+  { icon:"⏰", label:"スケジュール" },
+  { icon:"📋", label:"案件一覧" },
+  { icon:"💴", label:"見積" },
+  { icon:"⚙",  label:"機械/人員" },
+  { icon:"➕", label:"登録" },
+  { icon:"📝", label:"日報" },
+];
+
+const NIPPO_STORAGE = "seizou_nippo_v1";
+function getNippoToday() { return new Date().toISOString().slice(0,10); }
+function fmtNippoDate(s) { const d=new Date(s); return d.toLocaleDateString("ja-JP",{month:"long",day:"numeric",weekday:"short"}); }
+
+// ── Google Apps Script データ同期フック ──
+function useGAS(jobs, setJobs) {
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState(null);
+  const [syncError, setSyncError] = useState(null);
+
+  // 起動時にGASからデータ読み込み
+  useEffect(() => {
+    loadFromGAS();
+  }, []);
+
+  const normalizeDate = (val) => {
+    if (!val) return "";
+    const s = String(val).trim();
+    // YYYY-MM-DD形式ならそのまま返す
+    if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s)) return s;
+    // Date文字列をタイムゾーンずれなしで変換
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        // ローカル時間で年月日を取得（UTCではなく）
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      }
+    } catch(e) {}
+    return s;
+  };
+
+  const normalizeJob = (job) => ({
+    ...job,
+    pickupDate: normalizeDate(job.pickupDate),
+    deliveryDate: normalizeDate(job.deliveryDate),
+    machines: Array.isArray(job.machines) ? job.machines : (job.machines ? String(job.machines).split(",").filter(v=>v) : []),
+    workers: Array.isArray(job.workers) ? job.workers : (job.workers ? String(job.workers).split(",").filter(v=>v) : []),
+    status: job.status || "未着手",
+  });
+
+  const loadFromGAS = async () => {
+    setSyncing(true); setSyncError(null);
+    try {
+      // localStorageのデータを先に取得
+      const localData = localStorage.getItem(STORAGE_KEY);
+      const localJobs = localData ? JSON.parse(localData) : [];
+
+      const res = await fetch(GAS_URL + "?action=load");
+      const data = await res.json();
+      const gasJobs = (data.jobs && Array.isArray(data.jobs)) ? data.jobs.map(normalizeJob) : [];
+
+      if (gasJobs.length === 0 && localJobs.length > 0) {
+        // GASが空 → localStorageを使い、GASにも保存
+        setJobs(localJobs);
+        await fetch(GAS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({ action: "save", jobs: localJobs })
+        });
+      } else if (gasJobs.length >= localJobs.length && gasJobs.length > 0) {
+        // GASのデータが多い or 同じ → GASを使う
+        setJobs(gasJobs);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(gasJobs));
+      } else if (localJobs.length > gasJobs.length) {
+        // localStorageのデータが多い → localStorageを使い、GASに保存
+        setJobs(localJobs);
+        await fetch(GAS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({ action: "save", jobs: localJobs })
+        });
+      }
+      setLastSync(new Date().toLocaleTimeString("ja-JP"));
+    } catch(e) {
+      // エラー時はlocalStorageのデータを維持
+      const localData = localStorage.getItem(STORAGE_KEY);
+      if (localData) {
+        try { setJobs(JSON.parse(localData)); } catch{}
+      }
+      setSyncError("同期失敗");
+    }
+    setSyncing(false);
+  };
+
+  const saveToGAS = async (newJobs) => {
+    setSyncing(true); setSyncError(null);
+    try {
+      await fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ action: "save", jobs: newJobs })
+      });
+      setLastSync(new Date().toLocaleTimeString("ja-JP"));
+    } catch(e) {
+      setSyncError("保存失敗");
+    }
+    setSyncing(false);
+  };
+
+  return { syncing, lastSync, syncError, loadFromGAS, saveToGAS };
+}
+
+// ── スケジュール定数 ──
+const SCH_START = 8.5;
+const SCH_END = 17;
+const SCH_TOTAL = SCH_END - SCH_START;
+const SCH_ROW_H = 58;
+const SCH_ROW_GAP = 4;
+const SCH_TIME_LABELS = ["8:30","9:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"];
+const SCH_TIME_POS = [0,0.5,1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5];
+
+function schToPercent(hour) { return ((hour - SCH_START) / SCH_TOTAL) * 100; }
+function schFmtHour(h) { const hh=Math.floor(h); const mm=Math.round((h%1)*60); return `${hh}:${mm===0?"00":mm}`; }
+function assignRows(jobs) {
+  const sorted = [...jobs].sort((a,b)=>a.startHour-b.startHour);
+  const rows = [];
+  const result = [];
+  for (const job of sorted) {
+    let placed = false;
+    for (let r=0; r<rows.length; r++) {
+      if (rows[r].startHour + rows[r].duration <= job.startHour) {
+        rows[r] = job; result.push({...job,row:r}); placed=true; break;
+      }
+    }
+    if (!placed) { rows.push(job); result.push({...job,row:rows.length-1}); }
+  }
+  return { items:result, rowCount:Math.max(1,rows.length) };
+}
+
+// ── 取引先カラー管理フック ──
+function useClientColors(jobs) {
+  const [colorMap, setColorMap] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(CLIENT_COLOR_KEY)||"{}"); } catch { return {}; }
+  });
+  useEffect(() => {
+    const clients = [...new Set(jobs.map(j=>j.client).filter(Boolean))];
+    let updated = {...colorMap};
+    let changed = false;
+    clients.forEach(c => {
+      if (!updated[c] && updated[c] !== 0) {
+        updated[c] = Object.keys(updated).length % CLIENT_COLORS.length;
+        changed = true;
+      }
+    });
+    if (changed) { setColorMap(updated); localStorage.setItem(CLIENT_COLOR_KEY, JSON.stringify(updated)); }
+  }, [jobs]);
+  const getColor = (client) => CLIENT_COLORS[colorMap[client] ?? 0];
+  return { colorMap, getColor };
+}
+
+// ── AI画像読み取りモーダル ──
+function AiImportModal({ onClose, onImport, apiKey }) {
+  const [image, setImage] = useState(null);
+  const [mediaType, setMediaType] = useState('image/jpeg');
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const fileRef = useRef();
+
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target.result;
+      // Canvas で圧縮（最大1500px・JPEG品質0.8）
+      const img = new window.Image();
+      img.onload = () => {
+        const maxSize = 1500;
+        let w = img.width, h = img.height;
+        if (w > maxSize || h > maxSize) {
+          if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+          else { w = Math.round(w * maxSize / h); h = maxSize; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL("image/jpeg", 0.82);
+        setImage(compressed.split(",")[1]);
+        setMediaType("image/jpeg");
+        setPreview(compressed);
+        setResult(null);
+        setError(null);
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAnalyze = async () => {
+    if (!image) return;
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch("/.netlify/functions/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image, mediaType })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setResult(data.jobs || []);
+    } catch(e) {
+      setError("読み取りに失敗しました: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  const handleImport = () => {
+    if (!result) return;
+    onImport(result);
+    onClose();
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:300, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+      <div style={{ background:"#18181b", borderRadius:18, padding:20, width:"100%", maxWidth:480, border:"1px solid #27272a", maxHeight:"90vh", overflowY:"auto" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+          <div style={{ fontSize:15, fontWeight:700, color:"#fafafa" }}>📷 画像から自動入力</div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#71717a", fontSize:20, cursor:"pointer" }}>✕</button>
+        </div>
+        <div style={{ fontSize:12, color:"#52525b", marginBottom:14 }}>FAXや予定表の写真をアップロードするとAIが自動で案件情報を読み取ります</div>
+
+        {/* 画像アップロード */}
+        <div onClick={()=>fileRef.current.click()} style={{ border:"2px dashed #3f3f46", borderRadius:12, padding:24, textAlign:"center", cursor:"pointer", marginBottom:14, background: preview?"#111113":"transparent" }}>
+          {preview ? (
+            <img src={preview} style={{ maxWidth:"100%", maxHeight:200, borderRadius:8, objectFit:"contain" }} />
+          ) : (
+            <div>
+              <div style={{ fontSize:32, marginBottom:8 }}>📷</div>
+              <div style={{ fontSize:13, color:"#71717a" }}>タップして画像を選択</div>
+              <div style={{ fontSize:11, color:"#3f3f46", marginTop:4 }}>JPG・PNG・HEICに対応</div>
+            </div>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display:"none" }} />
+
+        {error && <div style={{ background:"#7f1d1d20", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 12px", fontSize:12, color:"#fca5a5", marginBottom:12 }}>{error}</div>}
+
+        {/* 読み取り結果 */}
+        {result && (
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:12, fontWeight:600, color:"#4ade80", marginBottom:8 }}>✅ {result.length}件の案件を読み取りました</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {result.map((job,i) => (
+                <div key={i} style={{ background:"#111113", borderRadius:10, padding:"10px 12px", border:"1px solid #27272a" }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:"#fafafa", marginBottom:4 }}>{job.product || "（品名なし）"}</div>
+                  <div style={{ fontSize:11, color:"#71717a" }}>🏢 {job.client}　📦 {job.qty}</div>
+                  {(job.pickupDate||job.deliveryDate) && (
+                    <div style={{ fontSize:11, color:"#71717a", marginTop:2 }}>
+                      {job.pickupDate && `🚚 ${fmtDate(job.pickupDate)}`}
+                      {job.pickupDate && job.deliveryDate && "　"}
+                      {job.deliveryDate && `📬 ${fmtDate(job.deliveryDate)}`}
+                    </div>
+                  )}
+                  {job.note && <div style={{ fontSize:11, color:"#52525b", marginTop:2 }}>📝 {job.note}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display:"flex", gap:10 }}>
+          {!result ? (
+            <button onClick={handleAnalyze} disabled={!image||loading} style={{ flex:1, padding:"13px", borderRadius:12, border:"none", background: image&&!loading?"linear-gradient(135deg,#f97316,#ea580c)":"#27272a", color: image&&!loading?"#fff":"#52525b", fontSize:14, fontWeight:700, cursor: image&&!loading?"pointer":"default" }}>
+              {loading ? "読み取り中..." : "🤖 AIで読み取る"}
+            </button>
+          ) : (
+            <>
+              <button onClick={()=>setResult(null)} style={{ flex:1, padding:"13px", borderRadius:12, border:"1px solid #3f3f46", background:"transparent", color:"#71717a", fontSize:13, cursor:"pointer" }}>やり直す</button>
+              <button onClick={handleImport} style={{ flex:2, padding:"13px", borderRadius:12, border:"none", background:"linear-gradient(135deg,#4ade80,#16a34a)", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>登録する</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 詳細モーダル ──
+function DetailModal({ job, onClose, onCycleStatus, onUpdateMachines, onUpdateWorkers, onUpdateNote, onUpdateDate, onUpdateField, onDelete, getColor }) {
+  const sc = STATUS_STYLE[job.status];
+  const cc = getColor(job.client);
+  const overdue = job.deliveryDate && job.deliveryDate < today && job.status !== "完了";
+  const [editNote, setEditNote] = useState(job.note);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:200, background:"#09090b", overflowY:"auto" }}>
+      <div style={{ background:"#18181b", borderBottom:"1px solid #27272a", padding:"14px 16px", display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:10 }}>
+        <button onClick={onClose} style={{ background:"#27272a", border:"none", color:"#e4e4e7", borderRadius:8, padding:"8px 14px", cursor:"pointer", fontSize:16, flexShrink:0 }}>← 戻る</button>
+        <div style={{ flex:1, minWidth:0 }}>
+          <input defaultValue={job.product} onBlur={e=>onUpdateField&&onUpdateField(job.id,"product",e.target.value)} style={{ fontSize:15, fontWeight:800, color:"#fafafa", background:"transparent", border:"none", outline:"none", width:"100%", fontFamily:"inherit" }} />
+          <div style={{ fontSize:11, color:cc.text }}>🏢 {job.client}</div>
+        </div>
+        <div style={{ width:10, height:10, borderRadius:"50%", background:cc.dot, flexShrink:0 }} />
+      </div>
+      <div style={{ padding:16, display:"flex", flexDirection:"column", gap:14 }}>
+        <div style={{ background:"#18181b", borderRadius:14, padding:16, border:`1px solid ${overdue?"#7f1d1d":cc.border}` }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:"#a1a1aa" }}>ステータス</div>
+            <button onClick={()=>onCycleStatus(job.id)} style={{ background:sc.bg, border:`1px solid ${sc.border}`, color:sc.text, borderRadius:20, padding:"7px 16px", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ width:8, height:8, borderRadius:"50%", background:sc.dot, display:"inline-block" }} />{job.status} → タップで変更
+            </button>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
+            {[{ label:"取引先", key:"client", icon:"🏢" },{ label:"数量", key:"qty", icon:"📦" },{ label:"加工種類", key:"processType", icon:"✂" }].map(item=>(
+              <div key={item.label} style={{ background:"#111113", borderRadius:10, padding:"10px 12px", border:`1px solid ${cc.border}40` }}>
+                <div style={{ fontSize:10, color:"#52525b", marginBottom:3 }}>{item.icon} {item.label}</div>
+                <input
+                  defaultValue={job[item.key]||""}
+                  onBlur={e => onUpdateField && onUpdateField(job.id, item.key, e.target.value)}
+                  style={{ background:"transparent", border:"none", color:cc.text, fontSize:13, fontWeight:600, outline:"none", width:"100%", padding:0, fontFamily:"inherit" }}
+                />
+              </div>
+            ))}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+            <div style={{ background:"#111113", borderRadius:10, padding:"10px 12px", border:"1px solid #1e3a5f" }}>
+              <div style={{ fontSize:10, color:"#7dd3fc", marginBottom:6 }}>🚚 引き取り日</div>
+              <input type="date" value={job.pickupDate||""} onChange={e=>onUpdateDate(job.id,"pickupDate",e.target.value)}
+                style={{ background:"transparent", border:"none", color:"#e4e4e7", fontSize:13, fontWeight:600, outline:"none", width:"100%", padding:0 }} />
+            </div>
+            <div style={{ background:"#111113", borderRadius:10, padding:"10px 12px", border:`1px solid ${overdue?"#7f1d1d":"#166534"}` }}>
+              <div style={{ fontSize:10, color:overdue?"#fca5a5":"#4ade80", marginBottom:6 }}>📬 納品日</div>
+              <input type="date" value={job.deliveryDate||""} onChange={e=>onUpdateDate(job.id,"deliveryDate",e.target.value)}
+                style={{ background:"transparent", border:"none", color:overdue?"#fca5a5":"#e4e4e7", fontSize:13, fontWeight:600, outline:"none", width:"100%", padding:0 }} />
+            </div>
+          </div>
+          {overdue && <div style={{ marginTop:10, background:"#7f1d1d20", border:"1px solid #7f1d1d", borderRadius:8, padding:"8px 12px", fontSize:12, color:"#fca5a5" }}>⚠ 納品日を過ぎています</div>}
+        </div>
+        <div style={{ background:"#18181b", borderRadius:14, padding:16, border:"1px solid #27272a" }}>
+          <div style={{ fontSize:13, fontWeight:600, color:"#a1a1aa", marginBottom:12 }}>⚙ 使用機械</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+            {MACHINES.map(m=>(
+              <button key={m} onClick={()=>onUpdateMachines(job.id,toggle(job.machines,m))} style={{ background:job.machines.includes(m)?"#431407":"#111113", border:`1px solid ${job.machines.includes(m)?"#ea580c":"#3f3f46"}`, color:job.machines.includes(m)?"#fb923c":"#71717a", borderRadius:8, padding:"8px 14px", fontSize:13, cursor:"pointer", fontWeight:job.machines.includes(m)?700:400 }}>⚙ {m}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ background:"#18181b", borderRadius:14, padding:16, border:"1px solid #27272a" }}>
+          <div style={{ fontSize:13, fontWeight:600, color:"#a1a1aa", marginBottom:12 }}>👤 担当者</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:job.workers.length>0?12:0 }}>
+            {WORKERS.map(w=>(
+              <button key={w} onClick={()=>onUpdateWorkers(job.id,toggle(job.workers,w))} style={{ background:job.workers.includes(w)?"#0c1a2e":"#111113", border:`1px solid ${job.workers.includes(w)?"#1d4ed8":"#3f3f46"}`, color:job.workers.includes(w)?"#7dd3fc":"#71717a", borderRadius:8, padding:"8px 14px", fontSize:13, cursor:"pointer", fontWeight:job.workers.includes(w)?700:400 }}>👤 {w}</button>
+            ))}
+          </div>
+          {job.workers.length>0&&(
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {job.workers.map(w=>(
+                <div key={w} style={{ display:"flex", alignItems:"center", gap:6, background:"#111113", borderRadius:20, padding:"5px 12px", border:"1px solid #1e3a5f" }}>
+                  <div style={{ width:24, height:24, borderRadius:"50%", background:"linear-gradient(135deg,#1d4ed8,#0284c7)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff" }}>{w[0]}</div>
+                  <span style={{ fontSize:12, color:"#7dd3fc" }}>{w}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ background:"#18181b", borderRadius:14, padding:16, border:"1px solid #27272a" }}>
+          <div style={{ fontSize:13, fontWeight:600, color:"#a1a1aa", marginBottom:10 }}>📝 備考・特記事項</div>
+          <textarea value={editNote} onChange={e=>setEditNote(e.target.value)} onBlur={()=>onUpdateNote(job.id,editNote)}
+            placeholder="備考を入力..." rows={3}
+            style={{ width:"100%", background:"#111113", border:"1px solid #3f3f46", borderRadius:9, padding:"10px 12px", color:"#e4e4e7", fontSize:13, outline:"none", resize:"none", fontFamily:"inherit" }} />
+          <div style={{ fontSize:10, color:"#3f3f46", marginTop:4 }}>入力欄の外をタップで保存</div>
+        </div>
+        <div style={{ background:"#18181b", borderRadius:14, padding:16, border:"1px solid #27272a" }}>
+          {!confirmDelete?(
+            <button onClick={()=>setConfirmDelete(true)} style={{ width:"100%", padding:"12px", borderRadius:10, border:"1px solid #3f3f46", background:"transparent", color:"#71717a", fontSize:13, cursor:"pointer" }}>🗑 この案件を削除</button>
+          ):(
+            <div>
+              <div style={{ fontSize:13, color:"#fca5a5", marginBottom:10, textAlign:"center" }}>本当に削除しますか？</div>
+              <div style={{ display:"flex", gap:10 }}>
+                <button onClick={()=>setConfirmDelete(false)} style={{ flex:1, padding:"11px", borderRadius:10, border:"1px solid #3f3f46", background:"transparent", color:"#71717a", fontSize:13, cursor:"pointer" }}>キャンセル</button>
+                <button onClick={()=>{ onDelete(job.id); onClose(); }} style={{ flex:1, padding:"11px", borderRadius:10, border:"none", background:"#7f1d1d", color:"#fca5a5", fontSize:13, fontWeight:700, cursor:"pointer" }}>削除する</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── メインApp ──
+function App() {
+  const [jobs, setJobs] = useState(()=>{ try{ const s=localStorage.getItem(STORAGE_KEY); return s?JSON.parse(s):INITIAL_DATA; }catch{ return INITIAL_DATA; } });
+  const [tab, setTab] = useState(0);
+  const [form, setForm] = useState(emptyForm);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [detailJob, setDetailJob] = useState(null);
+  const [calMode, setCalMode] = useState("delivery");
+  const [showAiImport, setShowAiImport] = useState(false);
+  const [quoteSelected, setQuoteSelected] = useState(null);
+  const [quoteForm, setQuoteForm] = useState({});
+  const [quoteFilter, setQuoteFilter] = useState("すべて");
+  const [scheduleDate, setScheduleDate] = useState(today);
+  const [scheduleData, setScheduleData] = useState({}); // {date: [{id, startHour, duration}]}
+  const scheduleRef = React.useRef ? React.useRef() : { current: null };
+  const [schDragging, setSchDragging] = useState(null);
+  const [apiKey, setApiKey] = useState(()=>localStorage.getItem("anthropic_api_key")||"");
+  const [showApiSetting, setShowApiSetting] = useState(false);
+  const now = new Date();
+  const [calYear, setCalYear] = useState(now.getFullYear());
+  const [calMonth, setCalMonth] = useState(now.getMonth());
+  const { getColor } = useClientColors(jobs);
+
+  // 日報state
+  const [nippoRecords, setNippoRecords] = useState(()=>{ try{ const s=localStorage.getItem(NIPPO_STORAGE); return s?JSON.parse(s):{}; }catch{ return {}; } });
+  const [nippoHistView, setNippoHistView] = useState(false);
+  const [nippoSaved, setNippoSaved] = useState(false);
+  const nippoDate = getNippoToday();
+  const nippoCurrent = nippoRecords[nippoDate] || { done:'', challenge:'' };
+  const nippoTodayJobs = (()=>{ const sched = scheduleData[nippoDate]||[]; return sched.map(s=>{ const j=jobs.find(jj=>String(jj.id)===String(s.id)); return j?{...j,startHour:s.startHour,duration:s.duration}:null; }).filter(Boolean).sort((a,b)=>a.startHour-b.startHour); })();
+  const updateNippo = (field, val) => { setNippoRecords(prev=>({ ...prev, [nippoDate]: { ...nippoCurrent, [field]: val } })); setNippoSaved(false); };
+  const saveNippo = () => { const updated = { ...nippoRecords, [nippoDate]: { ...nippoCurrent, savedAt: new Date().toISOString() } }; setNippoRecords(updated); try{ localStorage.setItem(NIPPO_STORAGE, JSON.stringify(updated)); }catch{} setNippoSaved(true); };
+  const { syncing, lastSync, syncError, loadFromGAS, saveToGAS } = useGAS(jobs, setJobs);
+
+  useEffect(()=>{
+    try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(jobs)); }catch{}
+    if(jobs.length > 0) saveToGAS(jobs);
+  },[jobs]);
+
+  const days = getMonthDays(calYear, calMonth);
+  const firstDow = new Date(calYear, calMonth, 1).getDay();
+
+  const cycleStatus = (id,e) => {
+    e&&e.stopPropagation();
+    setJobs(prev=>prev.map(j=>j.id===id?{...j,status:STATUS_LIST[(STATUS_LIST.indexOf(j.status)+1)%3]}:j));
+    if(detailJob?.id===id) setDetailJob(prev=>({...prev,status:STATUS_LIST[(STATUS_LIST.indexOf(prev.status)+1)%3]}));
+  };
+  const updateField=(id,field,value)=>{ setJobs(prev=>prev.map(j=>j.id===id?{...j,[field]:value}:j)); if(detailJob?.id===id) setDetailJob(prev=>({...prev,[field]:value})); };
+  const deleteJob=(id)=>setJobs(prev=>prev.filter(j=>j.id!==id));
+
+  const handleAdd=()=>{ if(!form.client||!form.product||!form.pickupDate) return; setJobs(prev=>[{...form,id:Date.now()},...prev]); setForm(emptyForm); setTab(0); };
+
+  const handleAiImport=(newJobs)=>{
+    const toAdd = newJobs.map(j=>({...emptyForm,...j,id:Date.now()+Math.random(),status:"未着手"}));
+    setJobs(prev=>[...toAdd,...prev]);
+    setTab(1);
+  };
+
+  const jobsForDate=(date)=>jobs.filter(j=>(calMode==="pickup"&&j.pickupDate===date)||(calMode==="delivery"&&j.deliveryDate===date));
+  const dayJobs=selectedDate?jobsForDate(selectedDate):[];
+  const machineLoad=MACHINES.map(m=>({name:m,count:jobs.filter(j=>j.machines.includes(m)&&j.status!=="完了").length}));
+  const workerLoad=WORKERS.map(w=>({name:w,jobs:jobs.filter(j=>j.workers.includes(w)&&j.status!=="完了")}));
+
+  const JobCard=({job})=>{
+    const sc=STATUS_STYLE[job.status];
+    const cc=getColor(job.client);
+    const overdue=job.deliveryDate&&job.deliveryDate<today&&job.status!=="完了";
+    return(
+      <div onClick={()=>setDetailJob({...job})} className="fade-in" style={{ background:"#18181b", borderRadius:14, border:`1px solid ${overdue?"#7f1d1d":cc.border}`, padding:"14px", cursor:"pointer", borderLeft:`3px solid ${cc.dot}` }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+          <div style={{ flex:1, paddingRight:8 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:2 }}>
+              {overdue&&<span style={{ fontSize:9, background:"#7f1d1d", color:"#fca5a5", borderRadius:4, padding:"2px 5px" }}>納品超過</span>}
+              <span style={{ fontSize:14, fontWeight:700, color:"#fafafa" }}>{job.product}</span>
+            </div>
+            <div style={{ fontSize:11, color:cc.text, display:"flex", alignItems:"center", gap:4, flexWrap:"wrap" }}>
+              <span style={{ width:6, height:6, borderRadius:"50%", background:cc.dot, display:"inline-block" }} />
+              {job.client}　📦 {job.qty}{job.processType && `　✂ ${job.processType}`}
+              {job.quoteStatus && (() => { const qs=QUOTE_STATUS_STYLE[job.quoteStatus||"未見積"]; return <span style={{ background:qs.bg, border:`1px solid ${qs.border}`, color:qs.text, borderRadius:10, padding:"1px 7px", fontSize:10, marginLeft:4 }}>{job.quoteStatus||"未見積"}</span>; })()}
+            </div>
+          </div>
+          <div style={{ background:sc.bg, border:`1px solid ${sc.border}`, color:sc.text, borderRadius:20, padding:"4px 10px", fontSize:11, fontWeight:600, display:"flex", alignItems:"center", gap:4, whiteSpace:"nowrap", flexShrink:0 }}>
+            <span style={{ width:6, height:6, borderRadius:"50%", background:sc.dot, display:"inline-block" }} />{job.status}
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:6, marginBottom:8, flexWrap:"wrap" }}>
+          {job.pickupDate&&<span style={{ background:"#0c1a2e", border:"1px solid #1e3a5f", color:"#7dd3fc", borderRadius:6, padding:"2px 8px", fontSize:11 }}>🚚 引取 {fmtDate(job.pickupDate)}</span>}
+          {job.deliveryDate&&<span style={{ background:"#052e16", border:"1px solid #166534", color:"#4ade80", borderRadius:6, padding:"2px 8px", fontSize:11 }}>📬 納品 {fmtDate(job.deliveryDate)}</span>}
+        </div>
+        <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:job.note?6:0 }}>
+          {job.machines.map(m=><span key={m} style={{ background:"#1c1917", border:"1px solid #44403c", color:"#a8a29e", borderRadius:5, padding:"2px 7px", fontSize:10 }}>⚙ {m}</span>)}
+          {job.workers.map(w=><span key={w} style={{ background:"#0c1a2e", border:"1px solid #1e3a5f", color:"#7dd3fc", borderRadius:5, padding:"2px 7px", fontSize:10 }}>👤 {w}</span>)}
+        </div>
+        {job.note&&<div style={{ fontSize:11, color:"#71717a" }}>📝 {job.note}</div>}
+        <div style={{ fontSize:10, color:"#3f3f46", marginTop:6, textAlign:"right" }}>タップで詳細 ›</div>
+      </div>
+    );
+  };
+
+  return(
+    <div style={{ fontFamily:"inherit", background:"#09090b", minHeight:"100vh", color:"#e4e4e7", maxWidth:900, margin:"0 auto", paddingBottom:80 }}>
+
+      {showAiImport&&<AiImportModal onClose={()=>setShowAiImport(false)} onImport={handleAiImport} apiKey={apiKey} />}
+      {detailJob&&<DetailModal job={detailJob} onClose={()=>setDetailJob(null)} onCycleStatus={cycleStatus} onUpdateMachines={(id,val)=>updateField(id,"machines",val)} onUpdateWorkers={(id,val)=>updateField(id,"workers",val)} onUpdateNote={(id,val)=>updateField(id,"note",val)} onUpdateDate={(id,field,val)=>updateField(id,field,val)} onUpdateField={(id,field,val)=>updateField(id,field,val)} onDelete={deleteJob} getColor={getColor} />}
+
+      {/* HEADER */}
+      <div style={{ background:"#18181b", borderBottom:"1px solid #27272a", padding:"14px 16px", position:"sticky", top:0, zIndex:50, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:36, height:36, borderRadius:10, flexShrink:0, background:"linear-gradient(135deg,#f97316,#ea580c)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>🏭</div>
+          <div>
+            <div style={{ fontSize:16, fontWeight:800, color:"#fafafa" }}>段取り管理</div>
+            <div style={{ fontSize:10, color: syncError?"#f87171": syncing?"#f59e0b":"#52525b" }}>
+              {syncing ? "⟳ 同期中..." : syncError ? "⚠ "+syncError : lastSync ? "✓ "+lastSync+"同期" : "案件 / 機械 / 人員"}
+            </div>
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+          <button onClick={loadFromGAS} style={{ background:"#27272a", border:"none", color:"#a1a1aa", borderRadius:8, padding:"6px 10px", cursor:"pointer", fontSize:16 }} title="データを再読み込み">↻</button>
+          {STATUS_LIST.map(s=>(
+            <div key={s} style={{ textAlign:"center" }}>
+              <div style={{ fontSize:14, fontWeight:700, color:STATUS_STYLE[s].text }}>{jobs.filter(j=>j.status===s).length}</div>
+              <div style={{ fontSize:9, color:"#52525b" }}>{s}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ padding:"14px 14px 0" }}>
+
+        {/* カレンダー */}
+        {tab===0&&(
+          <div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+              <button onClick={()=>{ let m=calMonth-1,y=calYear; if(m<0){m=11;y--;} setCalMonth(m);setCalYear(y); }} style={{ background:"#27272a", border:"none", color:"#e4e4e7", borderRadius:8, padding:"8px 14px", cursor:"pointer", fontSize:16 }}>‹</button>
+              <div style={{ fontSize:15, fontWeight:700, color:"#fafafa" }}>{calYear}年 {calMonth+1}月</div>
+              <button onClick={()=>{ let m=calMonth+1,y=calYear; if(m>11){m=0;y++;} setCalMonth(m);setCalYear(y); }} style={{ background:"#27272a", border:"none", color:"#e4e4e7", borderRadius:8, padding:"8px 14px", cursor:"pointer", fontSize:16 }}>›</button>
+            </div>
+            <div style={{ display:"flex", background:"#18181b", borderRadius:10, padding:4, marginBottom:10, border:"1px solid #27272a" }}>
+              {[{key:"pickup",label:"🚚 引き取り日",color:"#7dd3fc"},{key:"delivery",label:"📬 納品日",color:"#4ade80"}].map(opt=>(
+                <button key={opt.key} onClick={()=>{ setCalMode(opt.key); setSelectedDate(null); }} style={{ flex:1, padding:"8px", borderRadius:8, border:"none", background:calMode===opt.key?"#27272a":"transparent", color:calMode===opt.key?opt.color:"#52525b", fontSize:12, fontWeight:calMode===opt.key?700:400, cursor:"pointer" }}>{opt.label}</button>
+              ))}
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", marginBottom:4 }}>
+              {["日","月","火","水","木","金","土"].map((d,i)=>(
+                <div key={d} style={{ textAlign:"center", fontSize:11, color:i===0?"#f87171":i===6?"#7dd3fc":"#52525b", padding:"4px 0" }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:14, marginBottom:8, paddingLeft:4 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:4, fontSize:11, color:"#71717a" }}><span style={{ width:8, height:8, borderRadius:"50%", background:"#38bdf8", display:"inline-block" }} />引き取り日</div>
+              <div style={{ display:"flex", alignItems:"center", gap:4, fontSize:11, color:"#71717a" }}><span style={{ width:8, height:8, borderRadius:"50%", background:"#4ade80", display:"inline-block" }} />納品日</div>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:3 }}>
+              {Array(firstDow).fill(null).map((_,i)=><div key={`e${i}`} />)}
+              {days.map(date=>{
+                const isToday=date===today, dow=new Date(date).getDay();
+                const accentColor=calMode==="pickup"?"#38bdf8":"#4ade80";
+                const hasPickup=jobs.some(j=>j.pickupDate===date), hasDelivery=jobs.some(j=>j.deliveryDate===date);
+                const pickupCount=jobs.filter(j=>j.pickupDate===date).length, deliveryCount=jobs.filter(j=>j.deliveryDate===date).length;
+                const isSelected=selectedDate===date;
+                return(
+                  <div key={date} onClick={()=>setSelectedDate(isSelected?null:date)} style={{ background:isToday?"#1c1917":"#18181b", border:`1px solid ${isToday?"#f97316":isSelected?accentColor:"#27272a"}`, borderRadius:10, padding:"6px 4px 8px", cursor:"pointer", minHeight:64, display:"flex", flexDirection:"column", alignItems:"center" }}>
+                    <div style={{ fontSize:12, fontWeight:isToday?800:400, textAlign:"center", marginBottom:5, color:isToday?"#f97316":dow===0?"#f87171":dow===6?"#7dd3fc":"#a1a1aa" }}>{new Date(date).getDate()}</div>
+                    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+                      {hasPickup&&(<div style={{ display:"flex", gap:2 }}>{Array(Math.min(pickupCount,3)).fill(null).map((_,i)=><span key={i} style={{ width:7, height:7, borderRadius:"50%", background:"#38bdf8", display:"inline-block", boxShadow:"0 0 4px #38bdf880" }} />)}{pickupCount>3&&<span style={{ fontSize:8, color:"#38bdf8" }}>+</span>}</div>)}
+                      {hasDelivery&&(<div style={{ display:"flex", gap:2 }}>{Array(Math.min(deliveryCount,3)).fill(null).map((_,i)=><span key={i} style={{ width:7, height:7, borderRadius:"50%", background:"#4ade80", display:"inline-block", boxShadow:"0 0 4px #4ade8080" }} />)}{deliveryCount>3&&<span style={{ fontSize:8, color:"#4ade80" }}>+</span>}</div>)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {selectedDate&&(
+              <div style={{ marginTop:18 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:"#a1a1aa", marginBottom:10 }}>{calMode==="pickup"?"🚚 引き取り":"📬 納品"} {fmtDate(selectedDate)}<span style={{ marginLeft:8, fontSize:11, color:"#52525b" }}>{dayJobs.length}件</span></div>
+                {dayJobs.length===0?(<div style={{ textAlign:"center", color:"#3f3f46", padding:24, border:"1px dashed #27272a", borderRadius:12, fontSize:13 }}>この日の案件はありません</div>):(<div style={{ display:"flex", flexDirection:"column", gap:10 }}>{dayJobs.map(job=><JobCard key={job.id} job={job} />)}</div>)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* スケジュール */}
+        {tab===1&&(()=>{
+          const dateSchedule = scheduleData[scheduleDate] || [];
+          const scheduledJobs = jobs.map(j => {
+            const s = dateSchedule.find(d => String(d.id) === String(j.id));
+            return s ? {...j, startHour:s.startHour, duration:s.duration} : null;
+          }).filter(Boolean);
+          const unscheduledJobs = jobs.filter(j => !dateSchedule.find(d => String(d.id) === String(j.id)) && j.status !== "完了" && (!j.deliveryDate || j.deliveryDate >= scheduleDate) && (!j.pickupDate || j.pickupDate <= scheduleDate));
+          const {items, rowCount} = assignRows(scheduledJobs);
+          const tlHeight = rowCount * SCH_ROW_H + (rowCount-1) * SCH_ROW_GAP + 16;
+
+          const handleSchDrop = (e) => {
+            if (!schDragging) return;
+            e.preventDefault();
+            const el = document.getElementById("sch-timeline");
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const pct = Math.max(0, Math.min(1, x/rect.width));
+            const startHour = Math.max(SCH_START, Math.min(SCH_END-1, Math.round((SCH_START+pct*SCH_TOTAL)*2)/2));
+            const duration = schDragging.job.duration || 1;
+            setScheduleData(prev => {
+              const existing = prev[scheduleDate] || [];
+              const filtered = existing.filter(d => String(d.id) !== String(schDragging.job.id));
+              return {...prev, [scheduleDate]: [...filtered, {id:schDragging.job.id, startHour, duration}]};
+            });
+            setSchDragging(null);
+          };
+          const removeSchJob = (id) => setScheduleData(prev => ({...prev, [scheduleDate]:(prev[scheduleDate]||[]).filter(d=>String(d.id)!==String(id))}));
+          const changeSchDuration = (id, delta) => setScheduleData(prev => ({...prev, [scheduleDate]:(prev[scheduleDate]||[]).map(d=>String(d.id)===String(id)?{...d,duration:Math.max(0.5,Math.min(8,d.duration+delta))}:d)}));
+
+          return (
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#a1a1aa"}}>⏰ 日程スケジュール</div>
+                <input type="date" value={scheduleDate} onChange={e=>setScheduleDate(e.target.value)}
+                  style={{marginLeft:"auto",background:"#18181b",border:"1px solid #27272a",borderRadius:8,color:"#e4e4e7",padding:"6px 10px",fontSize:13}} />
+              </div>
+              <div style={{background:"#18181b",borderRadius:14,padding:14,border:"1px solid #27272a",marginBottom:12}}>
+                <div style={{fontSize:12,fontWeight:600,color:"#71717a",marginBottom:10}}>📋 未配置の案件（タイムラインにドラッグ）</div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",minHeight:36}}>
+                  {unscheduledJobs.length===0
+                    ? <div style={{fontSize:12,color:"#3f3f46"}}>すべて配置済みです ✅</div>
+                    : unscheduledJobs.map(job=>{const cc=getColor(job.client);return(
+                        <div key={job.id} draggable onDragStart={()=>setSchDragging({job:{...job,duration:1},fromScheduled:false})}
+                          style={{background:cc.bg,border:`1px solid ${cc.border}`,borderRadius:8,padding:"6px 12px",cursor:"grab",userSelect:"none"}}>
+                          <div style={{fontSize:12,fontWeight:700,color:cc.text}}>{job.product}</div>
+                          <div style={{fontSize:10,color:"#71717a"}}>{job.client}</div>
+                        </div>
+                      );})}
+                </div>
+              </div>
+              <div style={{background:"#18181b",borderRadius:14,padding:14,border:"1px solid #27272a"}}>
+                <div style={{position:"relative",height:20,marginBottom:4}}>
+                  {SCH_TIME_LABELS.map((label,i)=>(
+                    <div key={i} style={{position:"absolute",left:`${(SCH_TIME_POS[i]/SCH_TOTAL)*100}%`,fontSize:10,color:label==="12:00"?"#f87171":"#52525b",transform:"translateX(-50%)",whiteSpace:"nowrap"}}>{label}</div>
+                  ))}
+                </div>
+                <div id="sch-timeline" onDragOver={e=>e.preventDefault()} onDrop={handleSchDrop}
+                  style={{position:"relative",height:tlHeight,background:"#111113",borderRadius:10,border:`2px dashed ${schDragging?"#f97316":"#27272a"}`,overflow:"hidden",transition:"border-color 0.2s",minHeight:80}}>
+                  {SCH_TIME_POS.map((pos,i)=>(
+                    <div key={i} style={{position:"absolute",left:`${(pos/SCH_TOTAL)*100}%`,top:0,bottom:0,borderLeft:`1px solid ${SCH_TIME_LABELS[i]==="12:00"?"#7f1d1d50":"#27272a"}`,pointerEvents:"none"}} />
+                  ))}
+                  <div style={{position:"absolute",left:`${schToPercent(12)}%`,width:`${(1/SCH_TOTAL)*100}%`,top:0,bottom:0,background:"#7f1d1d15",pointerEvents:"none"}} />
+                  {items.map(job=>{
+                    const cc=getColor(job.client);
+                    return(
+                      <div key={job.id} draggable onDragStart={()=>setSchDragging({job,fromScheduled:true})}
+                        style={{position:"absolute",left:`${schToPercent(job.startHour)}%`,width:`${(job.duration/SCH_TOTAL)*100}%`,top:8+job.row*(SCH_ROW_H+SCH_ROW_GAP),height:SCH_ROW_H,background:cc.bg,border:`2px solid ${cc.border}`,borderRadius:8,cursor:"grab",overflow:"hidden",userSelect:"none"}}>
+                        <div style={{padding:"4px 8px"}}>
+                          <div style={{fontSize:11,fontWeight:700,color:cc.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{job.product}</div>
+                          <div style={{fontSize:10,color:"#a1a1aa",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{job.client}</div>
+                          <div style={{fontSize:10,color:"#52525b"}}>{schFmtHour(job.startHour)}〜{schFmtHour(job.startHour+job.duration)}</div>
+                        </div>
+                        <div style={{position:"absolute",bottom:3,right:3,display:"flex",gap:2}}>
+                          <button onClick={e=>{e.stopPropagation();changeSchDuration(job.id,-0.5);}} style={{background:"#27272a",border:"none",color:"#e4e4e7",borderRadius:4,width:18,height:18,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                          <button onClick={e=>{e.stopPropagation();changeSchDuration(job.id,0.5);}} style={{background:"#27272a",border:"none",color:"#e4e4e7",borderRadius:4,width:18,height:18,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>＋</button>
+                          <button onClick={e=>{e.stopPropagation();removeSchJob(job.id);}} style={{background:"#7f1d1d",border:"none",color:"#fca5a5",borderRadius:4,width:18,height:18,cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {items.length>0&&(
+                  <div style={{marginTop:14}}>
+                    <div style={{fontSize:11,color:"#52525b",marginBottom:8}}>📌 配置済み一覧</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      {[...items].sort((a,b)=>a.startHour-b.startHour).map(job=>{const cc=getColor(job.client);return(
+                        <div key={job.id} style={{display:"flex",alignItems:"center",gap:10,background:"#111113",borderRadius:8,padding:"7px 12px",borderLeft:`3px solid ${cc.dot}`}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <span style={{fontSize:13,fontWeight:600,color:"#fafafa"}}>{job.product}</span>
+                            <span style={{fontSize:11,color:"#52525b",marginLeft:8}}>{job.client}</span>
+                          </div>
+                          <div style={{fontSize:12,color:cc.text,fontWeight:700,flexShrink:0}}>{schFmtHour(job.startHour)} 〜 {schFmtHour(job.startHour+job.duration)}</div>
+                        </div>
+                      );})}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 案件一覧 */}
+        {tab===2&&(
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {jobs.length===0&&<div style={{ textAlign:"center", color:"#3f3f46", padding:40, border:"1px dashed #27272a", borderRadius:14 }}>案件がありません</div>}
+            {[...jobs].sort((a,b)=>(a.pickupDate||"").localeCompare(b.pickupDate||"")).map(job=><JobCard key={job.id} job={job} />)}
+          </div>
+        )}
+
+        {/* 機械・人員 */}
+
+        {/* 見積管理 */}
+        {tab===3&&(()=>{
+          const qDisplayed = quoteFilter==="すべて" ? jobs : jobs.filter(j=>j.quoteStatus===quoteFilter);
+          const totalApproved = jobs.filter(j=>j.quoteStatus==="承認済").reduce((s,j)=>s+(Number(j.quoteAmount)||0),0);
+          const totalQuoted = jobs.filter(j=>j.quoteStatus==="見積済").reduce((s,j)=>s+(Number(j.quoteAmount)||0),0);
+          const unquotedCount = jobs.filter(j=>!j.quoteStatus||j.quoteStatus==="未見積").length;
+          return (
+            <div>
+              {/* サマリー */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+                {[
+                  {label:"未見積",value:`${unquotedCount}件`,color:"#94a3b8"},
+                  {label:"見積済合計",value:fmtMoney(totalQuoted),color:"#a78bfa"},
+                  {label:"承認済合計",value:fmtMoney(totalApproved),color:"#4ade80"},
+                ].map((s,i)=>(
+                  <div key={i} style={{background:"#18181b",borderRadius:12,padding:"12px 10px",border:"1px solid #27272a",textAlign:"center"}}>
+                    <div style={{fontSize:10,color:"#52525b",marginBottom:4}}>{s.label}</div>
+                    <div style={{fontSize:14,fontWeight:700,color:s.color}}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* フィルター */}
+              <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+                {["すべて","未見積","見積済","承認済"].map(s=>(
+                  <button key={s} onClick={()=>setQuoteFilter(s)} style={{background:quoteFilter===s?"#27272a":"transparent",border:`1px solid ${quoteFilter===s?"#3f3f46":"#27272a"}`,color:quoteFilter===s?"#fafafa":"#52525b",borderRadius:20,padding:"5px 14px",fontSize:12,cursor:"pointer"}}>{s}</button>
+                ))}
+              </div>
+
+              {/* 案件一覧 */}
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {qDisplayed.length===0&&<div style={{textAlign:"center",color:"#3f3f46",padding:32,border:"1px dashed #27272a",borderRadius:14}}>該当する案件がありません</div>}
+                {qDisplayed.map(job=>{
+                  const qs=QUOTE_STATUS_STYLE[job.quoteStatus||"未見積"];
+                  const cc=getColor(job.client);
+                  return(
+                    <div key={job.id} onClick={()=>{setQuoteSelected(job);setQuoteForm({quoteAmount:job.quoteAmount||"",quoteSpec:job.quoteSpec||"",quoteNote:job.quoteNote||""});}}
+                      style={{background:"#18181b",borderRadius:14,border:"1px solid #27272a",padding:"14px",cursor:"pointer",borderLeft:`3px solid ${cc.dot}`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                        <div style={{flex:1,paddingRight:8}}>
+                          <div style={{fontSize:14,fontWeight:700,color:"#fafafa",marginBottom:2}}>{job.product}</div>
+                          <div style={{fontSize:11,color:"#71717a"}}>🏢 {job.client}　📦 {job.qty}</div>
+                        </div>
+                        <button onClick={e=>{e.stopPropagation();updateField(job.id,"quoteStatus",QUOTE_STATUS_LIST[(QUOTE_STATUS_LIST.indexOf(job.quoteStatus||"未見積")+1)%3]);}}
+                          style={{background:qs.bg,border:`1px solid ${qs.border}`,color:qs.text,borderRadius:20,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",flexShrink:0}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:qs.dot,display:"inline-block"}}/>{job.quoteStatus||"未見積"}
+                        </button>
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div style={{fontSize:12,color:"#52525b"}}>{job.quoteSpec||"仕様未入力"}</div>
+                        <div style={{fontSize:15,fontWeight:700,color:job.quoteAmount?"#f97316":"#3f3f46"}}>{fmtMoney(job.quoteAmount)}</div>
+                      </div>
+                      {job.quoteNote&&<div style={{fontSize:11,color:"#52525b",marginTop:4}}>📝 {job.quoteNote}</div>}
+                      <div style={{fontSize:10,color:"#3f3f46",marginTop:6,textAlign:"right"}}>タップで編集 ›</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* 見積編集モーダル */}
+              {quoteSelected&&(
+                <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",display:"flex",alignItems:"flex-end",zIndex:200}}>
+                  <div style={{background:"#18181b",borderRadius:"18px 18px 0 0",padding:20,width:"100%",maxWidth:900,margin:"0 auto",border:"1px solid #27272a"}}>
+                    <div style={{fontSize:15,fontWeight:700,color:"#fafafa",marginBottom:2}}>{quoteSelected.product}</div>
+                    <div style={{fontSize:11,color:"#52525b",marginBottom:18}}>{quoteSelected.client}　{quoteSelected.qty}</div>
+                    <div style={{marginBottom:12}}>
+                      <div style={{fontSize:11,color:"#71717a",marginBottom:4}}>💴 見積金額（税抜）</div>
+                      <input type="number" value={quoteForm.quoteAmount} onChange={e=>setQuoteForm({...quoteForm,quoteAmount:e.target.value})}
+                        placeholder="例：125000"
+                        style={{width:"100%",background:"#111113",border:"1px solid #3f3f46",borderRadius:9,padding:"11px 12px",color:"#e4e4e7",fontSize:16,outline:"none",fontFamily:"inherit"}} />
+                    </div>
+                    <div style={{marginBottom:12}}>
+                      <div style={{fontSize:11,color:"#71717a",marginBottom:4}}>📋 仕様</div>
+                      <input value={quoteForm.quoteSpec} onChange={e=>setQuoteForm({...quoteForm,quoteSpec:e.target.value})}
+                        placeholder="例：無線綴じ・PPグロス加工・A4変形"
+                        style={{width:"100%",background:"#111113",border:"1px solid #3f3f46",borderRadius:9,padding:"11px 12px",color:"#e4e4e7",fontSize:14,outline:"none",fontFamily:"inherit"}} />
+                    </div>
+                    <div style={{marginBottom:20}}>
+                      <div style={{fontSize:11,color:"#71717a",marginBottom:4}}>📝 備考</div>
+                      <input value={quoteForm.quoteNote} onChange={e=>setQuoteForm({...quoteForm,quoteNote:e.target.value})}
+                        placeholder="例：送料別・税抜"
+                        style={{width:"100%",background:"#111113",border:"1px solid #3f3f46",borderRadius:9,padding:"11px 12px",color:"#e4e4e7",fontSize:14,outline:"none",fontFamily:"inherit"}} />
+                    </div>
+                    <div style={{display:"flex",gap:10}}>
+                      <button onClick={()=>setQuoteSelected(null)} style={{flex:1,padding:"13px",borderRadius:12,border:"1px solid #3f3f46",background:"transparent",color:"#71717a",fontSize:13,cursor:"pointer"}}>キャンセル</button>
+                      <button onClick={()=>{
+                        updateField(quoteSelected.id,"quoteAmount",Number(quoteForm.quoteAmount)||0);
+                        updateField(quoteSelected.id,"quoteSpec",quoteForm.quoteSpec);
+                        updateField(quoteSelected.id,"quoteNote",quoteForm.quoteNote);
+                        setQuoteSelected(null);
+                      }} style={{flex:2,padding:"13px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#7c3aed,#6d28d9)",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>保存する</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {tab===4&&(
+          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            <div style={{ background:"#18181b", borderRadius:16, padding:16, border:"1px solid #27272a" }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#a1a1aa", marginBottom:14 }}>⚙ 機械稼働状況</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                {machineLoad.map(m=>(
+                  <div key={m.name}>
+                    <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><span style={{ fontSize:12, color:"#d4d4d8" }}>{m.name}</span><span style={{ fontSize:11, color:m.count>0?"#f97316":"#3f3f46" }}>{m.count>0?`${m.count}件稼働中`:"空き"}</span></div>
+                    <div style={{ height:6, background:"#27272a", borderRadius:3, overflow:"hidden" }}><div style={{ height:"100%", borderRadius:3, width:m.count>0?"100%":"0%", background:"linear-gradient(90deg,#f97316,#ea580c)" }} /></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ background:"#18181b", borderRadius:16, padding:16, border:"1px solid #27272a" }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#a1a1aa", marginBottom:14 }}>👤 人員配置状況</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {workerLoad.map(w=>(
+                  <div key={w.name} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"#111113", borderRadius:10, border:"1px solid #27272a" }}>
+                    <div style={{ width:36, height:36, borderRadius:"50%", flexShrink:0, background:w.jobs.length>0?"linear-gradient(135deg,#1d4ed8,#0284c7)":"#27272a", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, color:w.jobs.length>0?"#fff":"#52525b" }}>{w.name[0]}</div>
+                    <div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:13, fontWeight:600, color:"#d4d4d8" }}>{w.name}</div><div style={{ fontSize:11, color:"#52525b", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{w.jobs.length>0?w.jobs.map(j=>j.product).join("・"):"未配置"}</div></div>
+                    <div style={{ fontSize:12, fontWeight:700, color:w.jobs.length>0?"#7dd3fc":"#3f3f46", flexShrink:0 }}>{w.jobs.length>0?`${w.jobs.length}件`:"−"}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 登録 */}
+        {tab===5&&(
+          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            {/* AI読み取りボタン */}
+            <button onClick={()=>setShowAiImport(true)} style={{ width:"100%", padding:"16px", borderRadius:14, border:"1px solid #7c3aed", background:"#1a1033", color:"#c4b5fd", fontSize:14, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+              📷 画像から自動入力（AI読み取り）
+            </button>
+
+
+
+            <div style={{ borderTop:"1px solid #27272a", paddingTop:14 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#a1a1aa", marginBottom:12 }}>📠 手動で登録</div>
+              <div style={{ background:"#18181b", borderRadius:18, padding:18, border:"1px solid #27272a" }}>
+                {[{ label:"取引先名 *", key:"client", placeholder:"例：服部プロセス" },{ label:"品名・加工内容 *", key:"product", placeholder:"例：KOBECCO5月号" },{ label:"数量", key:"qty", placeholder:"例：8,600部" },{ label:"加工種類", key:"processType", placeholder:"例：無線綴じ・中綴じ・折り" },{ label:"備考・特記事項", key:"note", placeholder:"例：PPグロス加工" }].map(f=>(
+                  <div key={f.key} style={{ marginBottom:12 }}>
+                    <div style={{ fontSize:11, color:"#71717a", marginBottom:4 }}>{f.label}</div>
+                    <input value={form[f.key]} onChange={e=>setForm({...form,[f.key]:e.target.value})} placeholder={f.placeholder}
+                      style={{ width:"100%", background:"#111113", border:"1px solid #3f3f46", borderRadius:9, padding:"11px 12px", color:"#e4e4e7", fontSize:14, outline:"none", fontFamily:"inherit" }} />
+                  </div>
+                ))}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
+                  <div><div style={{ fontSize:11, color:"#7dd3fc", marginBottom:4 }}>🚚 引き取り日 *</div><input type="date" value={form.pickupDate} onChange={e=>setForm({...form,pickupDate:e.target.value})} style={{ width:"100%", background:"#111113", border:"1px solid #1e3a5f", borderRadius:9, padding:"11px 10px", color:"#e4e4e7", fontSize:13, outline:"none" }} /></div>
+                  <div><div style={{ fontSize:11, color:"#4ade80", marginBottom:4 }}>📬 納品日</div><input type="date" value={form.deliveryDate} onChange={e=>setForm({...form,deliveryDate:e.target.value})} style={{ width:"100%", background:"#111113", border:"1px solid #166534", borderRadius:9, padding:"11px 10px", color:"#e4e4e7", fontSize:13, outline:"none" }} /></div>
+                </div>
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:11, color:"#71717a", marginBottom:8 }}>使用機械（複数選択可）</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                    {MACHINES.map(m=><button key={m} onClick={()=>setForm({...form,machines:toggle(form.machines,m)})} style={{ background:form.machines.includes(m)?"#431407":"#111113", border:`1px solid ${form.machines.includes(m)?"#ea580c":"#3f3f46"}`, color:form.machines.includes(m)?"#fb923c":"#71717a", borderRadius:8, padding:"7px 12px", fontSize:12, cursor:"pointer" }}>⚙ {m}</button>)}
+                  </div>
+                </div>
+                <div style={{ marginBottom:22 }}>
+                  <div style={{ fontSize:11, color:"#71717a", marginBottom:8 }}>担当者（複数選択可）</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                    {WORKERS.map(w=><button key={w} onClick={()=>setForm({...form,workers:toggle(form.workers,w)})} style={{ background:form.workers.includes(w)?"#0c1a2e":"#111113", border:`1px solid ${form.workers.includes(w)?"#1d4ed8":"#3f3f46"}`, color:form.workers.includes(w)?"#7dd3fc":"#71717a", borderRadius:8, padding:"7px 12px", fontSize:12, cursor:"pointer" }}>👤 {w}</button>)}
+                  </div>
+                </div>
+                <button onClick={handleAdd} disabled={!form.client||!form.product||!form.pickupDate}
+                  style={{ width:"100%", padding:"14px", borderRadius:12, border:"none", background:form.client&&form.product&&form.pickupDate?"linear-gradient(135deg,#f97316,#ea580c)":"#27272a", color:form.client&&form.product&&form.pickupDate?"#fff":"#52525b", fontSize:15, fontWeight:700, cursor:"pointer" }}>
+                  登録する
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+
+        {/* 日報 */}
+        {tab===6&&(
+          <div style={{ display:"flex", flexDirection:"column", gap:0 }}>
+            {/* 日報ヘッダー */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+              <div>
+                <div style={{ fontSize:13, color:"#71717a" }}>{fmtNippoDate(nippoDate)}</div>
+                <div style={{ fontSize:16, fontWeight:700, color:"#fafafa" }}>本日の日報</div>
+              </div>
+              <div style={{ display:"flex", gap:6 }}>
+                {[["記入",false],["履歴",true]].map(([label,hist])=>(
+                  <button key={label} onClick={()=>setNippoHistView(hist)} style={{ background:nippoHistView===hist?"#27272a":"transparent", border:"1px solid", borderColor:nippoHistView===hist?"#52525b":"#3f3f46", color:nippoHistView===hist?"#e4e4e7":"#71717a", borderRadius:8, padding:"6px 14px", fontSize:13, cursor:"pointer" }}>{label}</button>
+                ))}
+              </div>
+            </div>
+
+            {!nippoHistView ? (
+              <div>
+                {/* 今日の案件 */}
+                {nippoTodayJobs.length>0&&(
+                  <div style={{ background:"#18181b", border:"1px solid #27272a", borderRadius:12, padding:"12px 14px", marginBottom:16 }}>
+                    <div style={{ fontSize:11, color:"#f97316", fontWeight:700, marginBottom:8 }}>⏰ 本日のスケジュール（{nippoTodayJobs.length}件）</div>
+                    {nippoTodayJobs.map(j=>(
+                      <div key={j.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:"1px solid #27272a" }}>
+                        <span style={{ width:6, height:6, borderRadius:"50%", background:STATUS_STYLE[j.status].dot, flexShrink:0 }} />
+                        <span style={{ fontSize:13, color:"#e4e4e7", flex:1 }}>{j.product}</span>
+                        <span style={{ fontSize:11, color:"#f97316" }}>{schFmtHour(j.startHour)}〜{schFmtHour(j.startHour+j.duration)}</span>
+                        <span style={{ fontSize:11, color:"#71717a" }}>{j.client}</span>
+                        <span style={{ fontSize:10, background:STATUS_STYLE[j.status].bg, border:"1px solid "+STATUS_STYLE[j.status].border, color:STATUS_STYLE[j.status].text, borderRadius:10, padding:"2px 7px" }}>{j.status}</span>
+                      </div>
+                    ))}
+                    <button onClick={()=>{ const text = nippoTodayJobs.map(j=>`・${schFmtHour(j.startHour)}〜${schFmtHour(j.startHour+j.duration)}　${j.product}（${j.client}）　${j.status}`).join("\n"); updateNippo("done", text); }} style={{ marginTop:10, width:"100%", background:"#1c1917", border:"1px solid #44403c", color:"#a8a29e", borderRadius:8, padding:"8px", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+                      ↑ 案件を「今日やったこと」に反映
+                    </button>
+                  </div>
+                )}
+
+                {/* 今日やったこと */}
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:12, color:"#a1a1aa", fontWeight:700, marginBottom:8 }}>✦ 今日やったこと</div>
+                  <textarea value={nippoCurrent.done||""} onChange={e=>updateNippo("done",e.target.value)}
+                    placeholder="完了した作業・対応した案件など..."
+                    style={{ width:"100%", minHeight:100, background:"#18181b", border:"1px solid #27272a", borderRadius:10, padding:"12px 14px", color:"#e4e4e7", fontSize:14, lineHeight:1.7, resize:"vertical", fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}
+                    onFocus={e=>e.target.style.borderColor="#f97316"}
+                    onBlur={e=>e.target.style.borderColor="#27272a"}
+                  />
+                </div>
+
+                {/* 困ったこと */}
+                <div style={{ marginBottom:20 }}>
+                  <div style={{ fontSize:12, color:"#a1a1aa", fontWeight:700, marginBottom:8 }}>△ 困ったこと・課題</div>
+                  <textarea value={nippoCurrent.challenge||""} onChange={e=>updateNippo("challenge",e.target.value)}
+                    placeholder="詰まったこと、明日に持ち越す課題など..."
+                    style={{ width:"100%", minHeight:100, background:"#18181b", border:"1px solid #27272a", borderRadius:10, padding:"12px 14px", color:"#e4e4e7", fontSize:14, lineHeight:1.7, resize:"vertical", fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}
+                    onFocus={e=>e.target.style.borderColor="#f97316"}
+                    onBlur={e=>e.target.style.borderColor="#27272a"}
+                  />
+                </div>
+
+                <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                  <button onClick={saveNippo} style={{ flex:1, background:nippoSaved?"#052e16":"linear-gradient(135deg,#f97316,#ea580c)", border:nippoSaved?"1px solid #166534":"none", color:nippoSaved?"#4ade80":"#fff", padding:"13px", borderRadius:12, fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                    {nippoSaved?"✓ 保存済み":"保存する"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                {Object.keys(nippoRecords).filter(d=>nippoRecords[d].savedAt).sort((a,b)=>b.localeCompare(a)).length===0 ? (
+                  <div style={{ color:"#52525b", fontSize:14, textAlign:"center", padding:"60px 0" }}>まだ記録がありません</div>
+                ) : Object.keys(nippoRecords).filter(d=>nippoRecords[d].savedAt).sort((a,b)=>b.localeCompare(a)).map(date=>{
+                  const r=nippoRecords[date];
+                  return(
+                    <div key={date} style={{ background:"#18181b", border:"1px solid #27272a", borderRadius:12, padding:"14px 16px", marginBottom:12 }}>
+                      <div style={{ fontSize:12, color:"#71717a", marginBottom:10 }}>{fmtNippoDate(date)}</div>
+                      {r.done&&<div style={{ marginBottom:8 }}><div style={{ fontSize:10, color:"#f97316", fontWeight:700, marginBottom:4 }}>✦ 今日やったこと</div><div style={{ fontSize:13, color:"#d4d4d8", lineHeight:1.65, whiteSpace:"pre-wrap" }}>{r.done}</div></div>}
+                      {r.challenge&&<div><div style={{ fontSize:10, color:"#a1a1aa", fontWeight:700, marginBottom:4 }}>△ 困ったこと・課題</div><div style={{ fontSize:13, color:"#d4d4d8", lineHeight:1.65, whiteSpace:"pre-wrap" }}>{r.challenge}</div></div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      {/* BOTTOM NAV */}
+      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:900, background:"#18181b", borderTop:"1px solid #27272a", display:"flex", zIndex:100 }}>
+        {TABS.map((t,i)=>(
+          <button key={i} onClick={()=>setTab(i)} style={{ flex:1, padding:"10px 0 8px", background:"none", border:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+            <span style={{ fontSize:18 }}>{t.icon}</span>
+            <span style={{ fontSize:10, fontWeight:tab===i?700:400, color:tab===i?"#f97316":"#52525b" }}>{t.label}</span>
+            {tab===i&&<span style={{ width:20, height:2, background:"#f97316", borderRadius:1 }} />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
