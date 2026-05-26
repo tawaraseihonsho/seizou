@@ -92,10 +92,8 @@ function useGAS(jobs, setJobs) {
   const [lastSync, setLastSync] = useState(null);
   const [syncError, setSyncError] = useState(null);
 
-  // 起動時にGASからデータ読み込み
-  useEffect(() => {
-    loadFromGAS();
-  }, []);
+  // GAS自動読み込み無効（手動同期のみ）
+  // useEffect(() => { loadFromGAS(); }, []);
 
   const normalizeDate = (val) => {
     if (!val) return "";
@@ -502,15 +500,9 @@ function App() {
   const saveNippo = () => { const updated = { ...nippoRecords, [nippoDate]: { ...nippoCurrent, savedAt: new Date().toISOString() } }; setNippoRecords(updated); try{ localStorage.setItem(NIPPO_STORAGE, JSON.stringify(updated)); }catch{} setNippoSaved(true); };
   const { syncing, lastSync, syncError, loadFromGAS, saveToGAS } = useGAS(jobs, setJobs);
 
-  const isFirstLoad = React.useRef(true);
-  const saveTimer = React.useRef(null);
   useEffect(()=>{
     try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(jobs)); }catch{}
-    // 初回読み込み時はGAS保存をスキップ
-    if(isFirstLoad.current){ isFirstLoad.current = false; return; }
-    // デバウンス: 3秒後にまとめて1回だけ保存
-    if(saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(()=>{ if(jobs.length > 0) saveToGAS(jobs); }, 3000);
+    // GAS自動保存無効（手動同期のみ）
   },[jobs]);
 
   const days = getMonthDays(calYear, calMonth);
