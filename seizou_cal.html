@@ -86,14 +86,11 @@ const NIPPO_STORAGE = "seizou_nippo_v1";
 function getNippoToday() { return new Date().toISOString().slice(0,10); }
 function fmtNippoDate(s) { const d=new Date(s); return d.toLocaleDateString("ja-JP",{month:"long",day:"numeric",weekday:"short"}); }
 
-// ── Google Apps Script データ同期フック ──
+// ── Google Apps Script データ同期フック（手動のみ）──
 function useGAS(jobs, setJobs) {
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [syncError, setSyncError] = useState(null);
-
-  // GAS自動読み込み無効（手動同期のみ）
-  // useEffect(() => { loadFromGAS(); }, []);
 
   const normalizeDate = (val) => {
     if (!val) return "";
@@ -123,59 +120,54 @@ function useGAS(jobs, setJobs) {
     status: job.status || "未着手",
   });
 
+  // GASからデータを読み込む（手動のみ・重複除去付き）
   const loadFromGAS = async () => {
     setSyncing(true); setSyncError(null);
     try {
-      // localStorageのデータを先に取得
-      const localData = localStorage.getItem(STORAGE_KEY);
-      const localJobs = localData ? JSON.parse(localData) : [];
-
       const res = await fetch(GAS_URL + "?action=load");
       const data = await res.json();
-      const gasJobs = (data.jobs && Array.isArray(data.jobs)) ? data.jobs.map(normalizeJob) : [];
-
-      if (gasJobs.length === 0 && localJobs.length > 0) {
-        // GASが空 → localStorageを使い、GASにも保存
-        setJobs(localJobs);
-        await fetch(GAS_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify({ action: "save", jobs: localJobs })
+      if (data.jobs && Array.isArray(data.jobs) && data.jobs.length > 0) {
+        // 重複除去
+        const seen = new Set();
+        const unique = data.jobs.map(normalizeJob).filter(j => {
+          if (seen.has(j.id)) return false;
+          seen.add(j.id);
+          return true;
         });
-      } else if (gasJobs.length >= localJobs.length && gasJobs.length > 0) {
-        // GASのデータが多い or 同じ → GASを使う
-        setJobs(gasJobs);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(gasJobs));
-      } else if (localJobs.length > gasJobs.length) {
-        // localStorageのデータが多い → localStorageを使い、GASに保存
-        setJobs(localJobs);
-        await fetch(GAS_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify({ action: "save", jobs: localJobs })
-        });
+        setJobs(unique);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(unique));
+        setLastSync(new Date().toLocaleTimeString("ja-JP"));
+      } else {
+        setSyncError("GASにデータがありません");
       }
-      setLastSync(new Date().toLocaleTimeString("ja-JP"));
     } catch(e) {
-      // エラー時はlocalStorageのデータを維持
-      const localData = localStorage.getItem(STORAGE_KEY);
-      if (localData) {
-        try { setJobs(JSON.parse(localData)); } catch{}
-      }
-      setSyncError("同期失敗");
+      setSyncError("読込失敗");
     }
     setSyncing(false);
   };
 
+  // GASにデータを保存する（手動のみ・重複除去付き）
   const saveToGAS = async (newJobs) => {
     setSyncing(true); setSyncError(null);
     try {
-      await fetch(GAS_URL, {
+      // 重複除去
+      const seen = new Set();
+      const unique = newJobs.filter(j => {
+        if (seen.has(String(j.id))) return false;
+        seen.add(String(j.id));
+        return true;
+      });
+      const res = await fetch(GAS_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({ action: "save", jobs: newJobs })
+        body: JSON.stringify({ action: "save", jobs: unique })
       });
-      setLastSync(new Date().toLocaleTimeString("ja-JP"));
+      const data = await res.json();
+      if (data.success) {
+        setLastSync(new Date().toLocaleTimeString("ja-JP"));
+      } else {
+        setSyncError("保存失敗");
+      }
     } catch(e) {
       setSyncError("保存失敗");
     }
@@ -501,8 +493,8 @@ function App() {
   const { syncing, lastSync, syncError, loadFromGAS, saveToGAS } = useGAS(jobs, setJobs);
 
   useEffect(()=>{
+    // localStorageのみ保存（GAS保存は手動ボタンのみ）
     try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(jobs)); }catch{}
-    // GAS自動保存無効（手動同期のみ）
   },[jobs]);
 
   const days = getMonthDays(calYear, calMonth);
@@ -583,7 +575,8 @@ function App() {
           </div>
         </div>
         <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-          <button onClick={loadFromGAS} style={{ background:"#27272a", border:"none", color:"#a1a1aa", borderRadius:8, padding:"6px 10px", cursor:"pointer", fontSize:16 }} title="データを再読み込み">↻</button>
+          <button onClick={()=>saveToGAS(jobs)} disabled={syncing} style={{ background:"#422006", border:"1px solid #92400e", color:"#fbbf24", borderRadius:8, padding:"5px 10px", cursor:"pointer", fontSize:11, fontWeight:700, marginRight:4 }} title="GASに保存">📤保存</button>
+          <button onClick={loadFromGAS} disabled={syncing} style={{ background:"#0c1a2e", border:"1px solid #1e3a5f", color:"#60a5fa", borderRadius:8, padding:"5px 10px", cursor:"pointer", fontSize:11, fontWeight:700 }} title="GASから読込">📥読込</button>
           {STATUS_LIST.map(s=>(
             <div key={s} style={{ textAlign:"center" }}>
               <div style={{ fontSize:14, fontWeight:700, color:STATUS_STYLE[s].text }}>{jobs.filter(j=>j.status===s).length}</div>
