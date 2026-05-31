@@ -87,22 +87,21 @@ const NIPPO_STORAGE = "seizou_nippo_v1";
 function getNippoToday() { return new Date().toISOString().slice(0,10); }
 function fmtNippoDate(s) { const d=new Date(s); return d.toLocaleDateString("ja-JP",{month:"long",day:"numeric",weekday:"short"}); }
 
-// ── Google Apps Script データ同期フック（手動のみ）──
+// ── Google Apps Script データ同期フック（自動同期版）──
 function useGAS(jobs, setJobs) {
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [syncError, setSyncError] = useState(null);
+  const autoSaveTimer = useRef(null);
+  const isFirstLoad = useRef(true);
 
   const normalizeDate = (val) => {
     if (!val) return "";
     const s = String(val).trim();
-    // YYYY-MM-DD形式ならそのまま返す
     if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s)) return s;
-    // Date文字列をタイムゾーンずれなしで変換
     try {
       const d = new Date(s);
       if (!isNaN(d.getTime())) {
-        // ローカル時間で年月日を取得（UTCではなく）
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, "0");
         const day = String(d.getDate()).padStart(2, "0");
@@ -121,20 +120,21 @@ function useGAS(jobs, setJobs) {
     status: job.status || "未着手",
   });
 
-  // GASからデータを読み込む（手動のみ・重複除去付き）
+  // ── GASからデータを読み込む ──
   const loadFromGAS = async () => {
     setSyncing(true); setSyncError(null);
     try {
       const res = await fetch(GAS_URL + "?action=load");
       const data = await res.json();
       if (data.jobs && Array.isArray(data.jobs) && data.jobs.length > 0) {
-        // 重複除去
         const seen = new Set();
         const unique = data.jobs.map(normalizeJob).filter(j => {
           if (seen.has(j.id)) return false;
           seen.add(j.id);
           return true;
         });
+        // 起動時読込なのでisFirstLoadをリセット（自動保存をスキップさせる）
+        isFirstLoad.current = true;
         setJobs(unique);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(unique));
         setLastSync(new Date().toLocaleTimeString("ja-JP"));
@@ -147,11 +147,10 @@ function useGAS(jobs, setJobs) {
     setSyncing(false);
   };
 
-  // GASにデータを保存する（手動のみ・重複除去付き）
+  // ── GASにデータを保存する（upsert方式・重複なし）──
   const saveToGAS = async (newJobs) => {
     setSyncing(true); setSyncError(null);
     try {
-      // 重複除去
       const seen = new Set();
       const unique = newJobs.filter(j => {
         if (seen.has(String(j.id))) return false;
@@ -167,13 +166,32 @@ function useGAS(jobs, setJobs) {
       if (data.success) {
         setLastSync(new Date().toLocaleTimeString("ja-JP"));
       } else {
-        setSyncError("保存失敗");
+        setSyncError("保存失敗: " + (data.error || ""));
       }
     } catch(e) {
       setSyncError("保存失敗");
     }
     setSyncing(false);
   };
+
+  // ── 起動時に自動読込（1回だけ）──
+  useEffect(() => {
+    loadFromGAS();
+  }, []);
+
+  // ── jobs変更時に3秒debounceで自動保存 ──
+  // loadFromGAS由来の最初のsetJobsはスキップする
+  useEffect(() => {
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      return;
+    }
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      saveToGAS(jobs);
+    }, 3000);
+    return () => clearTimeout(autoSaveTimer.current);
+  }, [jobs]);
 
   return { syncing, lastSync, syncError, loadFromGAS, saveToGAS };
 }
@@ -513,7 +531,7 @@ function App() {
   const { syncing, lastSync, syncError, loadFromGAS, saveToGAS } = useGAS(jobs, setJobs);
 
   useEffect(()=>{
-    // localStorageのみ保存（GAS保存は手動ボタンのみ）
+    // localStorageに保存（GAS保存はuseGAS内で3秒debounce自動実行）
     try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(jobs)); }catch{}
   },[jobs]);
 
@@ -590,7 +608,7 @@ function App() {
           <div>
             <div style={{ fontSize:16, fontWeight:800, color:"#fafafa" }}>段取り管理</div>
             <div style={{ fontSize:10, color: syncError?"#f87171": syncing?"#f59e0b":"#52525b" }}>
-              {syncing ? "⟳ 同期中..." : syncError ? "⚠ "+syncError : lastSync ? "✓ "+lastSync+"同期" : "案件 / 機械 / 人員"}
+              {syncing ? "⟳ 自動同期中..." : syncError ? "⚠ "+syncError : lastSync ? "✓ "+lastSync+" 自動保存済" : "起動中..."}
             </div>
           </div>
         </div>
