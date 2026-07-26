@@ -3146,17 +3146,27 @@ function App() {
       fontSize: 12,
       color: "#4ade80"
     }
-  }, "✓ APIキーが設定されています")), tab === 7 && /*#__PURE__*/React.createElement(NippoTab, {
-    nippoRecords: nippoRecords,
-    setNippoRecords: setNippoRecords,
-    nippoHistView: nippoHistView,
-    setNippoHistView: setNippoHistView,
-    nippoSaved: nippoSaved,
-    setNippoSaved: setNippoSaved,
-    nippoTodayJobs: nippoTodayJobs,
-    jobs: jobs,
-    getColor: getColor
-  })), /*#__PURE__*/React.createElement("div", {
+  }, "✓ APIキーが設定されています")), tab === 7 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#18181b",
+      border: "1px solid #27272a",
+      borderRadius: 14,
+      padding: 8,
+      height: "calc(100vh - 160px)",
+      display: "flex",
+      flexDirection: "column"
+    }
+  }, /*#__PURE__*/React.createElement("iframe", {
+    title: "日報フォーム",
+    src: "https://docs.google.com/forms/d/e/1FAIpQLSejsPSNZIttsa4Qek-gLuf6eCvOz1JB2bYRYIsAAy1dhJncPg/viewform?embedded=true",
+    style: {
+      flex: 1,
+      width: "100%",
+      border: "none",
+      borderRadius: 10,
+      background: "#fff"
+    }
+  }, "読み込んでいます…"))),/*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       bottom: 0,
