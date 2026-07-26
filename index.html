@@ -1805,8 +1805,26 @@ function App() {
         fontSize: 11,
         color: "#71717a"
       }
-    }, "📝 ", job.note));
-  };
+"📝 ", job.note), /*#__PURE__*/React.createElement("a", {
+      href: "https://docs.google.com/forms/d/e/1FAIpQLSejsPSNZIttsa4Qek-gLuf6eCvOz1JB2bYRYIsAAy1dhJncPg/viewform?usp=pp_url&entry.3312941=" + encodeURIComponent(job.product || "") + "&entry.906250124=" + encodeURIComponent(job.client || "") + "&entry.2141071584=" + encodeURIComponent(job.qty || ""),
+      target: "_blank",
+      rel: "noopener noreferrer",
+      onClick: e => e.stopPropagation(),
+      style: {
+        display: "block",
+        marginTop: 10,
+        textAlign: "center",
+        background: "#1a1033",
+        border: "1px solid #7c3aed",
+        color: "#c4b5fd",
+        borderRadius: 8,
+        padding: "8px 12px",
+        fontSize: 12,
+        fontWeight: 700,
+        textDecoration: "none"
+      }
+    }, "📝 データバンクに記録"));
+  
   return /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: "inherit",
