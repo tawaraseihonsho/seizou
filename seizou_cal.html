@@ -724,6 +724,16 @@ function App() {
           </div>
         )}
 
+       {/* 📝 日報（Googleフォーム） */}
+{tab===7&&(
+  <div style={{background:"#18181b",border:"1px solid #27272a",borderRadius:14,padding:8,height:"calc(100vh - 160px)",display:"flex",flexDirection:"column"}}>
+    <iframe
+      title="日報フォーム"
+      src="https://docs.google.com/forms/d/e/1FAIpQLSejsPSNZIttsa4Qek-gLuf6eCvOz1JB2bYRYIsAAy1dhJncPg/viewform?embedded=true"
+      style={{flex:1,width:"100%",border:"none",borderRadius:10,background:"#fff"}}
+    >読み込んでいます…</iframe>
+  </div>
+)}
         {/* 📝 業務日誌 */}
         {tab===7&&<NippoTab nippoRecords={nippoRecords} setNippoRecords={setNippoRecords} nippoHistView={nippoHistView} setNippoHistView={setNippoHistView} nippoSaved={nippoSaved} setNippoSaved={setNippoSaved} nippoTodayJobs={nippoTodayJobs} jobs={jobs} getColor={getColor} />}
 
